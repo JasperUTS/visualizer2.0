@@ -1,50 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Visualizer</title>
-    <link rel="stylesheet" href="styles.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Visualizer</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div id="canvas-container"></div>
-        <div class="controls">
-            <div class="control-group">
-                <label for="visualizer-style">Visualizer Style:</label>
-                <select id="visualizer-style">
-                    <option value="bars">Bars</option>
-                    <option value="points">Points</option>
-                    <option value="towers">Towers</option>
-                    <option value="wave">Wave</option>
-                    <option value="shaders">Shaders</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label for="audio-input">Upload Music:</label>
-                <div class="file-upload">
-                    <input type="file" id="audio-input" accept="audio/*" multiple>
-                    <label for="audio-input">Choose Audio Files</label>
-                </div>
-            </div>
-            <div class="control-group">
-                <button id="play-pause">Play</button>
-                <button id="prev">Previous</button>
-                <button id="next">Next</button>
-            </div>
-            <div class="progress-container">
-                <div class="progress"></div>
-                <div class="time-display">
-                    <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
-                </div>
-            </div>
+  <div class="container">
+    <div id="canvas-container"></div>
+
+    <div id="draggable-controls">
+      <div class="controls enhanced" id="control-box">
+        <h2 class="visualizer-heading">🎧 Audio Visualizer</h2>
+
+        <div class="control-group">
+          <label for="visualizer-style">Visualizer Style:</label>
+          <select id="visualizer-style">
+            <option value="bars">Bars</option>
+            <option value="points">Points</option>
+            <option value="towers">Towers</option>
+            <option value="wave">Wave</option>
+            <option value="shaders">Shaders</option>
+          </select>
         </div>
+
+        <div class="control-group">
+          <label for="audio-input">Upload Music:</label>
+          <div class="file-upload">
+            <input type="file" id="audio-input" accept="audio/*" multiple>
+            <label for="audio-input" class="upload-label">Choose Audio Files</label>
+          </div>
+        </div>
+
+        <div class="track-controls">
+          <button id="prev" title="Previous Track"><i class="material-icons">skip_previous</i></button>
+          <button id="play-pause" title="Play/Pause"><i class="material-icons" id="play-icon">play_arrow</i></button>
+          <button id="next" title="Next Track"><i class="material-icons">skip_next</i></button>
+        </div>
+
+        <div class="progress-container">
+          <div class="progress"></div>
+          <div class="time-display">
+            <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <script src="visualizer.js"></script>
+  </div>
+
+  <script src="visualizer.js"></script>
+  <script>
+    function makeControlsDraggable() {
+      const dragContainer = document.getElementById('draggable-controls');
+      let isDragging = false;
+      let offsetX, offsetY;
+
+      dragContainer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragContainer.classList.add('dragging');
+        offsetX = e.clientX - dragContainer.getBoundingClientRect().left;
+        offsetY = e.clientY - dragContainer.getBoundingClientRect().top;
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        dragContainer.style.left = `${e.clientX - offsetX}px`;
+        dragContainer.style.top = `${e.clientY - offsetY}px`;
+        dragContainer.style.bottom = 'auto';
+        dragContainer.style.transform = 'translateX(0)';
+      });
+
+      document.addEventListener('mouseup', () => {
+        isDragging = false;
+        dragContainer.classList.remove('dragging');
+      });
+    }
+
+    window.addEventListener('load', makeControlsDraggable);
+  </script>
 </body>
-</html> 
+</html>

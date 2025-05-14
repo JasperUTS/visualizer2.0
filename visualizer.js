@@ -165,43 +165,39 @@ class Visualizer {
         // Handle play/pause
         playPauseBtn.addEventListener('click', () => {
             initAudioContext();
-            if (!this.audioContext || !this.source) return;
-            
+            const playIcon = document.getElementById('play-icon');
+
+            if (!this.audioContext || !this.audioBuffer) return;
+
             if (this.isPlaying) {
                 this.source.stop();
                 this.isPlaying = false;
-                playPauseBtn.textContent = 'Play';
-                if (this.updateInterval) {
-                    clearInterval(this.updateInterval);
-                }
+                if (playIcon) playIcon.textContent = 'play_arrow';
+                if (this.updateInterval) clearInterval(this.updateInterval);
             } else {
+                this.source = this.audioContext.createBufferSource(); // Create a NEW source
+                this.source.buffer = this.audioBuffer;
+                this.source.connect(this.analyser);
+                this.analyser.connect(this.audioContext.destination);
+
                 this.source.start(0);
                 this.startTime = this.audioContext.currentTime;
                 this.isPlaying = true;
-                playPauseBtn.textContent = 'Pause';
+
+                if (playIcon) playIcon.textContent = 'pause';
+
                 this.updateInterval = setInterval(() => this.updateProgress(), 100);
             }
         });
 
-        // Handle next/previous
-        nextBtn.addEventListener('click', () => {
-            if (this.isPlaying) {
-                this.source.stop();
-                if (this.updateInterval) {
-                    clearInterval(this.updateInterval);
-                }
-            }
-            this.playNextTrack();
-        });
 
-        prevBtn.addEventListener('click', () => {
-            if (this.isPlaying) {
-                this.source.stop();
-                if (this.updateInterval) {
-                    clearInterval(this.updateInterval);
-                }
-            }
-            this.playPreviousTrack();
+
+        // Handle next/previous
+        nextBtn.addEventListener('click', () => this.playNextTrack());
+        prevBtn.addEventListener('click', () => this.playPreviousTrack());
+        visualizerStyle.addEventListener('change', (event) => {
+            this.currentStyle = event.target.value;
+            this.createVisualizer();
         });
 
         // Handle visualizer style change
@@ -260,7 +256,8 @@ class Visualizer {
                 this.source.connect(this.analyser);
                 this.analyser.connect(this.audioContext.destination);
                 this.isPlaying = false;
-                document.getElementById('play-pause').textContent = 'Play';
+                const playIcon = document.getElementById('play-icon');
+                if (playIcon) playIcon.textContent = 'play_arrow';
                 document.getElementById('total-time').textContent = this.formatTime(buffer.duration);
                 this.currentTime = 0;
                 document.querySelector('.progress').style.width = '0%';
@@ -297,6 +294,25 @@ class Visualizer {
             }
         }
     }
+     
+    formatTime(seconds){
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+
+    updateProgress(){
+        if (this.audioContext && this.audioBuffer && this.isPlaying) {
+            this.currentTime = this.audioContext.currentTime - this.startTime;
+            const progress = (this.currentTime / this.audioBuffer.duration) * 100;
+            document.querySelector('.progress').style.width = `${progress}%`;
+            document.getElementById('current-time').textContent = this.formatTime(this.currentTime);
+            if (this.currentTime >= this.audioBuffer.duration) {
+                this.playNextTrack();
+            }
+        }
+    }
+    
 
     /**
      * Create the current visualizer based on the selected style
@@ -1723,5 +1739,5 @@ class Visualizer {
 
 // Initialize the visualizer when the page loads
 window.addEventListener('load', () => {
-    new Visualizer();
+    window.visualizer = new Visualizer();
 }); 
