@@ -1938,7 +1938,7 @@ class Visualizer {
     }
 }
 
-// Initialize the visualizer when the page loads
-window.addEventListener('load', () => {
+// Initialize the visualizer only after user login
+window.addEventListener('userLoggedIn', () => {
     window.visualizer = new Visualizer();
-}); 
+});

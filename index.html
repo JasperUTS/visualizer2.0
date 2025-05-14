@@ -12,9 +12,91 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+  <style>
+    /* Simple styles for login/register modal */
+    #auth-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    #auth-modal.hidden {
+      display: none;
+    }
+    #auth-container {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      width: 320px;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+    }
+    #auth-container h2 {
+      margin-top: 0;
+      text-align: center;
+    }
+    #auth-container form {
+      display: flex;
+      flex-direction: column;
+    }
+    #auth-container label {
+      margin: 10px 0 5px;
+    }
+    #auth-container input {
+      padding: 8px;
+      border: none;
+      border-radius: 4px;
+    }
+    #auth-container button {
+      margin-top: 15px;
+      padding: 10px;
+      background: #4caf50;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #auth-toggle {
+      margin-top: 10px;
+      background: none;
+      border: none;
+      color: #4caf50;
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 0.9em;
+    }
+    #auth-error {
+      color: #f44336;
+      margin-top: 10px;
+      min-height: 18px;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
+  <div id="auth-modal">
+    <div id="auth-container">
+      <h2 id="auth-title">Login</h2>
+      <form id="auth-form">
+        <label for="username">Username</label>
+        <input type="text" id="username" autocomplete="username" required />
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+        <button type="submit" id="auth-submit">Login</button>
+      </form>
+      <button id="auth-toggle">Don't have an account? Register</button>
+      <div id="auth-error"></div>
+    </div>
+  </div>
+
+  <div class="container" style="display:none;" id="main-app-container">
     <div id="canvas-container"></div>
 
     <!-- Show UI button (initially hidden) -->
@@ -65,10 +147,14 @@
             <li class="empty-track-list">No tracks uploaded</li>
           </ul>
         </div>
+
+        <!-- Logout button -->
+        <button id="logout-button" title="Logout" style="margin-top: 10px; background-color: #f44336; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">Logout</button>
       </div>
     </div>
   </div>
 
+  <script src="auth.js"></script>
   <script src="visualizer.js"></script>
   <script>
     function makeControlsDraggable() {
@@ -132,6 +218,14 @@
     window.addEventListener('DOMContentLoaded', function() {
       makeControlsDraggable();
       setupUIToggle();
+
+      // Add logout button event listener
+      const logoutButton = document.getElementById('logout-button');
+      logoutButton.addEventListener('click', () => {
+        if (window.logout) {
+          window.logout();
+        }
+      });
     });
   </script>
 </body>
