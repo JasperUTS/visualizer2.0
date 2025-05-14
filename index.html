@@ -17,9 +17,16 @@
   <div class="container">
     <div id="canvas-container"></div>
 
+    <!-- Show UI button (initially hidden) -->
+    <button id="show-ui" class="show-ui-button" title="Show Controls"><i class="material-icons">settings</i></button>
+    <div id="track-name-display" class="track-name-display">No track selected</div>
+
     <div id="draggable-controls">
       <div class="controls enhanced" id="control-box">
-        <h2 class="visualizer-heading">🎧 Audio Visualizer</h2>
+        <h2 class="visualizer-heading">🎧 Audio Visualizer <span class="drag-indicator">⋮⋮</span></h2>
+        
+        <!-- Hide UI button -->
+        <button id="hide-ui" class="hide-ui-button" title="Hide UI"><i class="material-icons">close</i></button>
 
         <div class="control-group">
           <label for="visualizer-style">Visualizer Style:</label>
@@ -27,7 +34,6 @@
             <option value="bars">Bars</option>
             <option value="points">Points</option>
             <option value="towers">Towers</option>
-            <option value="wave">Wave</option>
             <option value="shaders">Shaders</option>
           </select>
         </div>
@@ -36,7 +42,7 @@
           <label for="audio-input">Upload Music:</label>
           <div class="file-upload">
             <input type="file" id="audio-input" accept="audio/*" multiple>
-            <label for="audio-input" class="upload-label">Choose Audio Files</label>
+            <label for="audio-input" class="upload-label">Choose Audio Files (Max 5)</label>
           </div>
         </div>
 
@@ -52,6 +58,13 @@
             <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
           </div>
         </div>
+        
+        <div class="track-list-container">
+          <h3>Tracks (Max 5)</h3>
+          <ul id="track-list" class="track-list">
+            <li class="empty-track-list">No tracks uploaded</li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -60,31 +73,66 @@
   <script>
     function makeControlsDraggable() {
       const dragContainer = document.getElementById('draggable-controls');
+      const dragHandle = document.querySelector('.visualizer-heading');
       let isDragging = false;
-      let offsetX, offsetY;
+      let offsetX = 0;
+      let offsetY = 0;
 
-      dragContainer.addEventListener('mousedown', (e) => {
+      // Position the control box in the center initially
+      dragContainer.style.position = 'absolute';
+      dragContainer.style.transform = 'none';
+      dragContainer.style.top = '50%';
+      dragContainer.style.left = '50%';
+      
+      // Make only the header draggable
+      dragHandle.addEventListener('mousedown', function(e) {
         isDragging = true;
-        dragContainer.classList.add('dragging');
         offsetX = e.clientX - dragContainer.getBoundingClientRect().left;
         offsetY = e.clientY - dragContainer.getBoundingClientRect().top;
+        dragHandle.style.cursor = 'grabbing';
       });
-
-      document.addEventListener('mousemove', (e) => {
+      
+      document.addEventListener('mousemove', function(e) {
         if (!isDragging) return;
-        dragContainer.style.left = `${e.clientX - offsetX}px`;
-        dragContainer.style.top = `${e.clientY - offsetY}px`;
-        dragContainer.style.bottom = 'auto';
-        dragContainer.style.transform = 'translateX(0)';
+        
+        const x = e.clientX - offsetX;
+        const y = e.clientY - offsetY;
+        
+        dragContainer.style.left = x + 'px';
+        dragContainer.style.top = y + 'px';
       });
-
-      document.addEventListener('mouseup', () => {
+      
+      document.addEventListener('mouseup', function() {
         isDragging = false;
-        dragContainer.classList.remove('dragging');
+        dragHandle.style.cursor = 'grab';
       });
     }
 
-    window.addEventListener('load', makeControlsDraggable);
+    // UI show/hide functionality
+    function setupUIToggle() {
+      const hideButton = document.getElementById('hide-ui');
+      const showButton = document.getElementById('show-ui');
+      const controlPanel = document.getElementById('draggable-controls');
+      const trackNameDisplay = document.getElementById('track-name-display');
+      
+      hideButton.addEventListener('click', function() {
+        controlPanel.style.display = 'none';
+        showButton.style.display = 'flex';
+        trackNameDisplay.classList.add('visible');
+      });
+      
+      showButton.addEventListener('click', function() {
+        controlPanel.style.display = 'block';
+        showButton.style.display = 'none';
+        trackNameDisplay.classList.remove('visible');
+      });
+    }
+
+    // Initialize everything after the page loads
+    window.addEventListener('DOMContentLoaded', function() {
+      makeControlsDraggable();
+      setupUIToggle();
+    });
   </script>
 </body>
 </html>

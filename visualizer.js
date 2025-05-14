@@ -155,10 +155,20 @@ class Visualizer {
         audioInput.addEventListener('change', (event) => {
             initAudioContext();
             const files = event.target.files;
-            this.audioFiles = Array.from(files);
+            const fileArray = Array.from(files);
+            
+            // Limit to max 5 tracks
+            if (fileArray.length > 5) {
+                alert('Maximum 5 tracks allowed. Only the first 5 will be loaded.');
+                this.audioFiles = fileArray.slice(0, 5);
+            } else {
+                this.audioFiles = fileArray;
+            }
+            
             if (this.audioFiles.length > 0) {
                 this.currentTrackIndex = 0;
                 this.loadAudioFile(this.audioFiles[0]);
+                this.updateTrackList();
             }
         });
 
@@ -189,8 +199,6 @@ class Visualizer {
                 this.updateInterval = setInterval(() => this.updateProgress(), 100);
             }
         });
-
-
 
         // Handle next/previous
         nextBtn.addEventListener('click', () => this.playNextTrack());
@@ -247,6 +255,15 @@ class Visualizer {
     loadAudioFile(file) {
         if (!this.audioContext) return;
         
+        // Store whether we were playing before loading the new track
+        const wasPlaying = this.isPlaying;
+        
+        // Stop current track if it's playing
+        if (this.isPlaying && this.source) {
+            this.source.stop();
+            this.isPlaying = false;
+        }
+        
         const reader = new FileReader();
         reader.onload = (event) => {
             this.audioContext.decodeAudioData(event.target.result, (buffer) => {
@@ -255,16 +272,50 @@ class Visualizer {
                 this.source.buffer = this.audioBuffer;
                 this.source.connect(this.analyser);
                 this.analyser.connect(this.audioContext.destination);
-                this.isPlaying = false;
+                
+                // Reset UI elements
                 const playIcon = document.getElementById('play-icon');
-                if (playIcon) playIcon.textContent = 'play_arrow';
+                if (playIcon) playIcon.textContent = wasPlaying ? 'pause' : 'play_arrow';
                 document.getElementById('total-time').textContent = this.formatTime(buffer.duration);
                 this.currentTime = 0;
                 document.querySelector('.progress').style.width = '0%';
                 document.getElementById('current-time').textContent = '0:00';
+                
+                // Update track name display
+                this.updateTrackNameDisplay(file.name);
+                
+                // If we were playing before, automatically start the new track
+                if (wasPlaying) {
+                    this.source.start(0);
+                    this.startTime = this.audioContext.currentTime;
+                    this.isPlaying = true;
+                    
+                    // Start the progress update interval
+                    if (this.updateInterval) clearInterval(this.updateInterval);
+                    this.updateInterval = setInterval(() => this.updateProgress(), 100);
+                }
             });
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    /**
+     * Update the track name display
+     */
+    updateTrackNameDisplay(filename) {
+        const trackNameDisplay = document.getElementById('track-name-display');
+        if (trackNameDisplay) {
+            // Clean up the filename - remove extension and replace underscores/hyphens with spaces
+            let displayName = filename.replace(/\.[^/.]+$/, ""); // Remove file extension
+            displayName = displayName.replace(/[_-]/g, " "); // Replace underscores and hyphens with spaces
+            
+            // Capitalize first letter of each word
+            displayName = displayName.split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+                
+            trackNameDisplay.textContent = displayName;
+        }
     }
 
     /**
@@ -273,11 +324,9 @@ class Visualizer {
     playNextTrack() {
         if (this.audioFiles.length > 0) {
             this.currentTrackIndex = (this.currentTrackIndex + 1) % this.audioFiles.length;
-            this.loadAudioFile(this.audioFiles[this.currentTrackIndex]);
-            if (this.isPlaying) {
-                this.source.start(0);
-                this.startTime = this.audioContext.currentTime;
-            }
+            const nextTrack = this.audioFiles[this.currentTrackIndex];
+            this.loadAudioFile(nextTrack);
+            this.updateTrackList();
         }
     }
 
@@ -287,11 +336,9 @@ class Visualizer {
     playPreviousTrack() {
         if (this.audioFiles.length > 0) {
             this.currentTrackIndex = (this.currentTrackIndex - 1 + this.audioFiles.length) % this.audioFiles.length;
-            this.loadAudioFile(this.audioFiles[this.currentTrackIndex]);
-            if (this.isPlaying) {
-                this.source.start(0);
-                this.startTime = this.audioContext.currentTime;
-            }
+            const prevTrack = this.audioFiles[this.currentTrackIndex];
+            this.loadAudioFile(prevTrack);
+            this.updateTrackList();
         }
     }
      
@@ -372,6 +419,14 @@ class Visualizer {
         // Remove cloud layers
         this.cloudLayers.forEach(layer => this.scene.remove(layer));
         this.cloudLayers = [];
+        
+        // Remove starfield
+        if (this.starfield) {
+            this.scene.remove(this.starfield);
+            this.starfield.geometry.dispose();
+            this.starfield.material.dispose();
+            this.starfield = null;
+        }
 
         // Reset arrays
         this.bars = [];
@@ -852,16 +907,21 @@ class Visualizer {
 
         // Create ground plane
         const planeGeometry = new THREE.PlaneGeometry(gs.planeSize * 2, gs.planeSize * 2);
-        const planeMaterial = new THREE.MeshPhongMaterial({ 
+        const planeMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x050508, 
-            shininess: 50,
-            specular: 0x111111
+            metalness: 0.3,
+            roughness: 0.7,
+            emissive: 0x000000,
+            emissiveIntensity: 0
         });
         const plane = new THREE.Mesh(planeGeometry, planeMaterial);
         plane.rotation.x = -Math.PI / 2;
         plane.position.y = -gs.baseTowerHeight / 2; 
         this.scene.add(plane);
         this.groundPlane = plane; 
+
+        // Create stars
+        this.createStarfield();
 
         // Create towers in a grid
         for (let x = 0; x < gs.gridSize; x++) {
@@ -872,7 +932,9 @@ class Visualizer {
                     metalness: 0.1,
                     roughness: 0.6,
                     emissive: 0xffffff, 
-                    emissiveIntensity: 0
+                    emissiveIntensity: 0,
+                    transparent: true,
+                    opacity: 0.75
                 });
                 const tower = new THREE.Mesh(geometry, material);
 
@@ -888,6 +950,116 @@ class Visualizer {
         // Set camera position
         this.camera.position.set(0, 5, 15);
         this.camera.lookAt(0, 2, 0);
+    }
+
+    /**
+     * Create a starfield for the towers visualizer background
+     */
+    createStarfield() {
+        // Number of stars to create
+        const starCount = 5000;
+        
+        // Create geometry for the stars
+        const starGeometry = new THREE.BufferGeometry();
+        const starPositions = new Float32Array(starCount * 3);
+        const starSizes = new Float32Array(starCount);
+        const starColors = new Float32Array(starCount * 3);
+        
+        // Create stars in a spherical distribution around the scene
+        const radius = 300; // Reduced radius to make stars appear closer
+        
+        for (let i = 0; i < starCount; i++) {
+            // Generate random spherical coordinates
+            const theta = Math.random() * Math.PI * 2; // Azimuthal angle
+            const phi = Math.acos(2 * Math.random() - 1); // Polar angle
+            
+            // Convert to Cartesian coordinates
+            const x = radius * Math.sin(phi) * Math.cos(theta);
+            const y = radius * Math.sin(phi) * Math.sin(theta);
+            const z = radius * Math.cos(phi);
+            
+            // Set positions
+            starPositions[i * 3] = x;
+            starPositions[i * 3 + 1] = y;
+            starPositions[i * 3 + 2] = z;
+            
+            // Increase star sizes for better visibility
+            const sizeFactor = Math.random();
+            starSizes[i] = sizeFactor > 0.98 ? Math.random() * 4 + 3 : Math.random() * 2.5 + 1.0;
+            
+            // Vary star colors slightly (mostly white with hints of blue/yellow)
+            const colorVariation = Math.random();
+            if (colorVariation > 0.8) {
+                // Bluish star (slightly cooler)
+                starColors[i * 3] = 0.8 + Math.random() * 0.2;
+                starColors[i * 3 + 1] = 0.8 + Math.random() * 0.2;
+                starColors[i * 3 + 2] = 1.0;
+            } else if (colorVariation > 0.6) {
+                // Yellowish star (slightly warmer)
+                starColors[i * 3] = 1.0;
+                starColors[i * 3 + 1] = 0.9 + Math.random() * 0.1;
+                starColors[i * 3 + 2] = 0.6 + Math.random() * 0.2;
+            } else {
+                // White/neutral star
+                starColors[i * 3] = 0.9 + Math.random() * 0.1;
+                starColors[i * 3 + 1] = 0.9 + Math.random() * 0.1;
+                starColors[i * 3 + 2] = 0.9 + Math.random() * 0.1;
+            }
+        }
+        
+        // Add attributes to the geometry
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+        starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+        
+        // Create shader material for the stars
+        const starMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 }
+            },
+            vertexShader: `
+                attribute float size;
+                attribute vec3 color;
+                varying vec3 vColor;
+                uniform float time;
+                
+                void main() {
+                    vColor = color;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    
+                    // Make some stars twinkle by varying their size with time
+                    float twinkle = sin(time * 2.0 + position.x * 10.0) * 0.2 + 0.8;
+                    
+                    gl_PointSize = size * twinkle * (300.0 / -mvPosition.z);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                
+                void main() {
+                    // Make stars look like small glowing orbs
+                    vec2 center = vec2(0.5, 0.5);
+                    float dist = length(gl_PointCoord - center);
+                    
+                    // Higher alpha value for better visibility
+                    float alpha = smoothstep(0.5, 0.1, dist);
+                    
+                    // Add more brightness to the stars
+                    vec3 brightColor = vColor * 1.5;
+                    
+                    gl_FragColor = vec4(brightColor, alpha);
+                }
+            `,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            vertexColors: true
+        });
+        
+        // Create the star particle system
+        this.starfield = new THREE.Points(starGeometry, starMaterial);
+        this.scene.add(this.starfield);
     }
 
     /**
@@ -908,6 +1080,34 @@ class Visualizer {
             averageLevel += this.dataArray[i] / 255.0;
         }
         averageLevel /= this.dataArray.length;
+        
+        // Update starfield if it exists
+        if (this.starfield) {
+            // Update time uniform for star twinkling effect
+            this.starfield.material.uniforms.time.value += delta * (1.0 + averageLevel * 2.0);
+            
+            // Make stars rotate very slowly for subtle movement
+            this.starfield.rotation.y += delta * 0.01;
+            
+            // Slight pulsation with beat
+            const pulseFactor = 1.0 + (lowAvg * 0.1);
+            this.starfield.scale.set(pulseFactor, pulseFactor, pulseFactor);
+        }
+
+        // Update floor color based on audio data
+        if (this.groundPlane) {
+            // Use complementary colors to the tower colors
+            const floorHue = (0.6 + averageLevel * 0.4 + 0.5) % 1.0;
+            const floorSaturation = 0.7 + lowAvg * 0.3;
+            const floorLightness = 0.2 + highAvg * 0.3;
+            
+            // Update the floor material color
+            this.groundPlane.material.color.setHSL(floorHue, floorSaturation, floorLightness);
+            
+            // Add subtle emissive glow to the floor for more impact
+            this.groundPlane.material.emissive = new THREE.Color();
+            this.groundPlane.material.emissive.setHSL(floorHue, 0.9, averageLevel * 0.3);
+        }
 
         // Update each tower
         this.towers.forEach((tower, index) => {
@@ -1734,6 +1934,58 @@ class Visualizer {
 
         // Render scene
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * Update the track list display
+     */
+    updateTrackList() {
+        const trackList = document.getElementById('track-list');
+        if (!trackList) return;
+        
+        // Clear the list
+        trackList.innerHTML = '';
+        
+        if (this.audioFiles.length === 0) {
+            // Show empty state
+            const emptyItem = document.createElement('li');
+            emptyItem.className = 'empty-track-list';
+            emptyItem.textContent = 'No tracks uploaded';
+            trackList.appendChild(emptyItem);
+            return;
+        }
+        
+        // Add each track to the list
+        this.audioFiles.forEach((file, index) => {
+            const trackItem = document.createElement('li');
+            
+            // Format the display name nicely
+            let displayName = file.name.replace(/\.[^/.]+$/, ""); // Remove file extension
+            displayName = displayName.replace(/[_-]/g, " "); // Replace underscores and hyphens with spaces
+            
+            // Capitalize first letter of each word
+            displayName = displayName.split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+            
+            trackItem.textContent = `${index + 1}. ${displayName}`;
+            
+            // Mark the current track
+            if (index === this.currentTrackIndex) {
+                trackItem.className = 'active';
+            }
+            
+            // Add click handler to play the track
+            trackItem.addEventListener('click', () => {
+                if (index !== this.currentTrackIndex) {
+                    this.currentTrackIndex = index;
+                    this.loadAudioFile(this.audioFiles[index]);
+                    this.updateTrackList();
+                }
+            });
+            
+            trackList.appendChild(trackItem);
+        });
     }
 }
 

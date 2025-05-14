@@ -29,34 +29,54 @@ body {
 
 #draggable-controls {
   position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  cursor: grab;
   z-index: 999;
+  width: auto;
+  user-select: none;
 }
+
 #draggable-controls.dragging {
-  cursor: grabbing;
+  transition: none;
+  user-select: none;
 }
 
 .controls.enhanced {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(20, 20, 20, 0.85);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 20px;
   padding: 25px;
-  gap: 20px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  animation: fadeIn 1s ease forwards;
   min-width: 300px;
+  max-width: 400px;
 }
 
 .visualizer-heading {
   font-weight: 600;
   font-size: 20px;
-  margin-bottom: 10px;
+  margin-bottom: 15px;
   text-align: center;
   color: #00ffc3;
+  cursor: grab;
+  user-select: none;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  margin: -15px -15px 15px -15px;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+
+.visualizer-heading:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.visualizer-heading:before {
+  content: none;
+}
+
+#draggable-controls.dragging .visualizer-heading {
+  cursor: grabbing;
 }
 
 .control-group {
@@ -133,13 +153,31 @@ input[type="file"] {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  outline: none;
 }
+
 .track-controls button:hover {
   background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
+
 .track-controls button:active {
   transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Ensure buttons are clickable */
+.track-controls button, 
+.upload-label, 
+select, 
+input {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1000;
 }
 
 .material-icons {
@@ -170,4 +208,169 @@ input[type="file"] {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.drag-indicator {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 5px;
+  letter-spacing: -3px;
+}
+
+.hide-ui-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  z-index: 1001;
+}
+
+.hide-ui-button .material-icons {
+  font-size: 18px;
+}
+
+.hide-ui-button:hover {
+  background: rgba(40, 40, 40, 0.8);
+  transform: scale(1.1);
+}
+
+.show-ui-button {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #00ffc3;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  padding: 0;
+}
+
+.show-ui-button:hover {
+  background: rgba(30, 30, 30, 0.95);
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+}
+
+.show-ui-button .material-icons {
+  font-size: 24px;
+}
+
+/* Track name display styles */
+.track-name-display {
+  position: fixed;
+  top: 20px;
+  left: 80px; /* Position to the right of the show-ui button */
+  background: rgba(20, 20, 20, 0.8);
+  color: #00ffc3;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  display: none; /* Hidden by default, shown when UI is hidden */
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  transition: all 0.3s ease;
+}
+
+.track-name-display.visible {
+  display: block;
+}
+
+/* Track list styling */
+.track-list-container {
+  margin-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 15px;
+}
+
+.track-list-container h3 {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.track-list {
+  list-style: none;
+  padding: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.track-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.track-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.track-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.track-list li {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.2s ease;
+}
+
+.track-list li:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.track-list li.active {
+  background: rgba(0, 255, 195, 0.2);
+  color: #00ffc3;
+  font-weight: 500;
+}
+
+.track-list li.active:hover {
+  background: rgba(0, 255, 195, 0.3);
+}
+
+.empty-track-list {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4) !important;
+  cursor: default !important;
+}
+
+.empty-track-list:hover {
+  background: transparent !important;
 }
