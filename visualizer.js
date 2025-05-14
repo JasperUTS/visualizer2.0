@@ -39,27 +39,6 @@ class Visualizer {
         this.orbitControls = null;
         this.clock = new THREE.Clock();
         
-        // Ink visualizer properties
-        this.inkSystem = null;
-        this.inkParticles = [];
-        this.inkVelocities = [];
-        this.inkAges = [];
-        this.paperTexture = null;
-        this.inkTargets = [];
-        
-        // Wave visualizer properties
-        this.waveGeometry1 = null;
-        this.waveGeometry2 = null;
-        this.waveMaterial = null;
-        this.waveMesh1 = null;
-        this.waveMesh2 = null;
-        this.waveSegments = [];
-        this.segmentWidth = 200;
-        this.segmentHeight = 100;
-        this.segmentSegments = 100;
-        this.numSegments = 3;
-        this.segmentSpacing = 150;
-        
         // Shader visualizer properties
         this.shaderPlane = null;
         this.shaderMaterial = null;
@@ -69,15 +48,6 @@ class Visualizer {
         this.midFreqSmoothed = 0;
         this.highFreqSmoothed = 0;
         this.overallSmoothed = 0;
-        
-        // Cloud control properties
-        this.cloudSettings = {
-            height: 10,
-            opacity: 0.8,
-            movementSpeed: 0.1,
-            audioReactivity: 0.2,
-            threshold: 0.4
-        };
         
         // Initialize the visualizer
         this.init();
@@ -365,7 +335,43 @@ class Visualizer {
      * Create the current visualizer based on the selected style
      */
     createVisualizer() {
+        // Store the previous style before clearing the scene
+        const previousStyle = this.currentStyle;
+        
+        console.log(`Switching visualizer from "${previousStyle}" to "${this.currentStyle}"`);
+        console.log(`Camera before switch:`, {
+            position: { ...this.camera.position },
+            isOrthographic: this.camera instanceof THREE.OrthographicCamera,
+            isPerspective: this.camera instanceof THREE.PerspectiveCamera,
+            fov: this.camera.fov,
+            aspect: this.camera.aspect
+        });
+        
         this.clearScene();
+        
+        // Restore camera if switching FROM shaders visualizer - FIXED APPROACH
+        if (previousStyle === 'shaders') {
+            console.log(`Restoring camera from shaders mode - creating NEW camera`);
+            
+            // Dispose of old camera
+            if (this.camera.dispose) {
+                this.camera.dispose();
+            }
+            
+            // Create a completely fresh perspective camera
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Reset orbit controls to use new camera
+            this.orbitControls.object = this.camera;
+            
+            // Clear any stored original camera
+            this.originalCamera = null;
+            
+            console.log(`Created NEW perspective camera:`, {
+                isPerspective: this.camera instanceof THREE.PerspectiveCamera,
+                fov: this.camera.fov
+            });
+        }
         
         // Set up basic scene
         this.camera.position.set(0, 10, 20);
@@ -388,16 +394,22 @@ class Visualizer {
                 this.camera.position.set(0, 2, 10);
                 this.camera.lookAt(0, 1, 0);
                 break;
-            case 'wave':
-                this.createWaveVisualizer();
-                this.camera.position.set(0, 0, 30);
-                this.camera.lookAt(0, 0, 0);
-                break;
             case 'shaders':
+                console.log(`Saving original camera before creating shader visualizer`, {
+                    position: { ...this.camera.position },
+                    isPerspective: this.camera instanceof THREE.PerspectiveCamera
+                });
                 this.createShadersVisualizer();
                 break;
         }
 
+        console.log(`Camera after switch to "${this.currentStyle}":`, {
+            position: { ...this.camera.position },
+            isOrthographic: this.camera instanceof THREE.OrthographicCamera,
+            isPerspective: this.camera instanceof THREE.PerspectiveCamera,
+            hasOriginalCamera: this.originalCamera !== null
+        });
+        
         // Ensure initial render
         this.renderer.render(this.scene, this.camera);
     }
@@ -433,66 +445,8 @@ class Visualizer {
         this.particles = [];
         this.towers = [];
 
-        // Clean up ink system elements
-        if (this.inkSystem) {
-            this.scene.remove(this.inkSystem);
-            this.inkSystem.geometry.dispose();
-            this.inkSystem.material.dispose(); 
-        }
-        this.inkSystem = null;
-        this.inkParticles = [];
-        this.inkVelocities = [];
-        this.inkAges = [];
-        this.inkTargets = [];
-
         // Reset background
         this.scene.background = new THREE.Color(0x000005);
-
-        // Clean up wave visualizer elements
-        if (this.waveMesh1) {
-            this.scene.remove(this.waveMesh1);
-            this.waveMesh1.geometry.dispose();
-            this.waveMesh1 = null;
-        }
-        if (this.waveMesh2) {
-            this.scene.remove(this.waveMesh2);
-            this.waveMesh2.geometry.dispose();
-            this.waveMesh2 = null;
-        }
-        if (this.waveMaterial) {
-            this.waveMaterial.dispose();
-            this.waveMaterial = null;
-        }
-        if (this.waveGeometry1) {
-            this.waveGeometry1.dispose();
-            this.waveGeometry1 = null;
-        }
-        if (this.waveGeometry2) {
-            this.waveGeometry2.dispose();
-            this.waveGeometry2 = null;
-        }
-
-        if (this.waveSegments) {
-            this.waveSegments.forEach(segment => {
-                this.scene.remove(segment);
-                segment.geometry.dispose();
-                segment.material.dispose();
-            });
-            this.waveSegments = [];
-        }
-        
-        // Clean up particle system
-        if (this.particleSystem) {
-            this.scene.remove(this.particleSystem);
-            this.particleSystem.geometry.dispose();
-            this.particleSystem.material.dispose();
-            this.particleSystem = null;
-        }
-        
-        // Reset particle data
-        this.waveParticles = [];
-        this.particleLifetimes = null;
-        this.particleCount = 0;
         
         // Clean up points visualizer elements
         if (this.pointsMesh) {
@@ -514,17 +468,8 @@ class Visualizer {
             this.shaderMaterial = null;
         }
         
-        // Restore original camera if we're switching from shaders visualizer
-        if (this.originalCamera && this.currentStyle === 'shaders') {
-            // Dispose current camera if needed
-            if (this.camera.dispose) {
-                this.camera.dispose();
-            }
-            
-            // Restore original camera state
-            this.camera = this.originalCamera;
-            this.originalCamera = null;
-        }
+        // Note: Camera restoration is now handled in createVisualizer
+        // so we don't restore the camera here
         
         // Reset shader-related properties
         this.shaderTime = 0;
@@ -532,32 +477,6 @@ class Visualizer {
         this.midFreqSmoothed = 0;
         this.highFreqSmoothed = 0;
         this.overallSmoothed = 0;
-
-        // Clean up exhibition elements
-        if (this.exhibitionFloor) {
-            this.scene.remove(this.exhibitionFloor);
-            this.exhibitionFloor.geometry.dispose();
-            this.exhibitionFloor.material.dispose();
-            this.exhibitionFloor = null;
-        }
-
-        if (this.exhibitionWalls) {
-            this.exhibitionWalls.forEach(wall => {
-                this.scene.remove(wall);
-                wall.geometry.dispose();
-                wall.material.dispose();
-            });
-            this.exhibitionWalls = [];
-        }
-
-        if (this.exhibitionFrames) {
-            this.exhibitionFrames.forEach(frame => {
-                this.scene.remove(frame);
-                frame.geometry.dispose();
-                frame.material.dispose();
-            });
-            this.exhibitionFrames = [];
-        }
     }
 
     /**
@@ -589,9 +508,12 @@ class Visualizer {
 
     /**
      * Create the points visualizer
-     * Creates a sphere of points that react to audio with dynamic movement
+     * Creates a particle system that forms atmospheric patterns
      */
     createPointsVisualizer() {
+        // Set a dark background
+        this.scene.background = new THREE.Color(0x000011);
+        
         // Create a large number of points
         const pointCount = 15000;
         const positions = new Float32Array(pointCount * 3);
@@ -890,7 +812,7 @@ class Visualizer {
 
         // Set up scene properties
         this.scene.fog = null;
-        this.scene.background = new THREE.Color(0x000000); 
+        this.scene.background = new THREE.Color(0x000000);
 
         // Configure grid settings
         const planeSize = 150;
@@ -1010,7 +932,7 @@ class Visualizer {
         // Add attributes to the geometry
         starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
         starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
-        starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+        starGeometry.setAttribute('customColor', new THREE.BufferAttribute(starColors, 3));  // Changed 'color' to 'customColor'
         
         // Create shader material for the stars
         const starMaterial = new THREE.ShaderMaterial({
@@ -1019,12 +941,12 @@ class Visualizer {
             },
             vertexShader: `
                 attribute float size;
-                attribute vec3 color;
+                attribute vec3 customColor;  // Changed from 'color' to 'customColor'
                 varying vec3 vColor;
                 uniform float time;
                 
                 void main() {
-                    vColor = color;
+                    vColor = customColor;  // Use customColor instead
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     
                     // Make some stars twinkle by varying their size with time
@@ -1171,168 +1093,195 @@ class Visualizer {
      * Uses fragment shaders to create dynamic audio-reactive patterns
      */
     createShadersVisualizer() {
-        // Initialize shader-related properties
-        this.shaderPlane = null;
-        this.shaderMaterial = null;
-        this.shaderTime = 0;
-        
-        // Set a dark background
-        this.scene.background = new THREE.Color(0x000000);
-        
-        // Store the original camera for later restoration
-        this.originalCamera = this.camera.clone();
-        
-        // Create a full-screen quad for the shader
-        const geometry = new THREE.PlaneGeometry(2, 2);
-        
-        // Create shader material with uniforms for audio reactivity
-        this.shaderMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-                audioLevel: { value: 0.0 },
-                audioLowFreq: { value: 0.0 },
-                audioHighFreq: { value: 0.0 },
-                audioTexture: { value: null }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                
-                void main() {
-                    vUv = uv;
-                    gl_Position = vec4(position, 1.0);
+        try {
+            // Initialize shader-related properties
+            this.shaderPlane = null;
+            this.shaderMaterial = null;
+            this.shaderTime = 0;
+            
+            // Set a dark background
+            this.scene.background = new THREE.Color(0x000000);
+            
+            // Store the original camera for later restoration
+            console.log(`Storing original camera`, {
+                position: { ...this.camera.position },
+                isPerspective: this.camera instanceof THREE.PerspectiveCamera
+            });
+            this.originalCamera = this.camera.clone();
+            console.log(`Original camera stored`, {
+                position: { ...this.originalCamera.position },
+                isPerspective: this.originalCamera instanceof THREE.PerspectiveCamera
+            });
+            
+            // Create a full-screen quad for the shader
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            
+            // Create shader material with uniforms for audio reactivity
+            this.shaderMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    audioLevel: { value: 0.0 },
+                    audioLowFreq: { value: 0.0 },
+                    audioHighFreq: { value: 0.0 },
+                    audioTexture: { value: null }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    
+                    void main() {
+                        vUv = uv;
+                        gl_Position = vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    uniform vec2 resolution;
+                    uniform float audioLevel;
+                    uniform float audioLowFreq;
+                    uniform float audioHighFreq;
+                    
+                    varying vec2 vUv;
+                    
+                    // Simple noise function
+                    float noise(vec2 p) {
+                        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                    }
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    // Function to generate vibrant colors
+                    vec3 vibrantColor(float value, float offset) {
+                        float hue = fract(value * 0.8 + offset);
+                        float sat = 0.9;
+                        float val = 0.9;
+                        return hsv2rgb(vec3(hue, sat, val));
+                    }
+                    
+                    // Function to blend colors
+                    vec3 blendColors(vec3 color1, vec3 color2, float factor) {
+                        return mix(color1, color2, factor);
+                    }
+                    
+                    void main() {
+                        // Center coordinates
+                        vec2 uv = vUv * 2.0 - 1.0;
+                        uv.x *= resolution.x / resolution.y;
+                        
+                        // Audio-reactive parameters
+                        float bassPulse = 0.5 + audioLowFreq * 0.7;  // Increased audio reactivity
+                        float treblePulse = 0.5 + audioHighFreq * 0.7;
+                        float overallPulse = 0.5 + audioLevel * 0.7;
+                        
+                        // Create circular waves from center
+                        float dist = length(uv);
+                        float angle = atan(uv.y, uv.x);
+                        
+                        // Wave patterns affected by audio - more complex patterns
+                        float wave1 = sin(dist * 10.0 - time * 2.0) * 0.5 + 0.5;
+                        float wave2 = sin(dist * 15.0 - time * 1.5 + audioLevel * 5.0) * 0.5 + 0.5;
+                        float wave3 = sin(angle * 8.0 + time * 0.5) * 0.5 + 0.5;
+                        float wave4 = sin(dist * 20.0 - time * 2.5 + audioHighFreq * 10.0) * 0.5 + 0.5;
+                        float wave5 = cos(angle * 12.0 - time * 0.7 + audioLowFreq * 2.0) * 0.5 + 0.5;
+                        
+                        // Create multiple patterns for more complex visuals
+                        float pattern1 = wave1 * wave2 * wave3;
+                        float pattern2 = wave4 * wave5;
+                        float pattern3 = sin(dist * 25.0 - time) * cos(angle * 5.0 + time * 0.3);
+                        
+                        // Combine patterns
+                        float mainPattern = smoothstep(0.2, 0.8, pattern1);
+                        mainPattern *= overallPulse;
+                        
+                        float secondPattern = smoothstep(0.1, 0.9, pattern2);
+                        secondPattern *= treblePulse;
+                        
+                        float thirdPattern = smoothstep(0.3, 0.7, pattern3 * 0.5 + 0.5);
+                        thirdPattern *= bassPulse;
+                        
+                        // Create multiple colors with different hue offsets for more variety
+                        float timeOffset = time * 0.05;
+                        
+                        // Primary color - shifts with bass
+                        vec3 color1 = vibrantColor(timeOffset + audioLowFreq * 0.3, 0.0);
+                        
+                        // Secondary color - complementary to primary
+                        vec3 color2 = vibrantColor(timeOffset + audioHighFreq * 0.2, 0.33);
+                        
+                        // Tertiary color - shifts differently
+                        vec3 color3 = vibrantColor(timeOffset - audioLevel * 0.25, 0.66);
+                        
+                        // Background color with subtle patterns
+                        float bgPattern1 = sin(uv.x * 20.0 + time) * sin(uv.y * 20.0 + time * 0.7);
+                        float bgPattern2 = cos(uv.x * 15.0 - time * 0.5) * cos(uv.y * 15.0 - time * 0.3);
+                        
+                        bgPattern1 = smoothstep(0.0, 0.8, bgPattern1 * audioLevel);
+                        bgPattern2 = smoothstep(0.0, 0.8, bgPattern2 * audioHighFreq);
+                        
+                        // Background gradient
+                        vec3 bgColor1 = vibrantColor(timeOffset * 0.7, 0.5);
+                        vec3 bgColor2 = vibrantColor(timeOffset * 0.7, 0.8);
+                        vec3 bgColor = mix(bgColor1, bgColor2, bgPattern1 * 0.5 + 0.5);
+                        
+                        // Apply a vignette effect
+                        float vignette = 1.0 - smoothstep(0.5, 1.5, dist);
+                        
+                        // Mix multiple colors based on patterns
+                        vec3 finalColor = blendColors(color1, color2, pattern1);
+                        finalColor = blendColors(finalColor, color3, pattern2 * 0.7);
+                        
+                        // Add subtle highlights
+                        finalColor += color3 * thirdPattern * 0.3;
+                        
+                        // Mix with background
+                        finalColor = mix(bgColor * 0.4, finalColor, mainPattern * vignette);
+                        
+                        // Add glow effect
+                        finalColor += (color1 * 0.2 + color2 * 0.1) * secondPattern * (1.0 - dist);
+                        
+                        // Final color with background
+                        gl_FragColor = vec4(finalColor, 1.0);
+                    }
+                `,
+                side: THREE.DoubleSide
+            });
+            
+            // Create the plane mesh
+            this.shaderPlane = new THREE.Mesh(geometry, this.shaderMaterial);
+            this.scene.add(this.shaderPlane);
+            
+            // Setup orthographic camera for full-screen quad
+            console.log(`Replacing camera with orthographic camera for shaders`);
+            this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            console.log(`New orthographic camera created`, {
+                isOrthographic: this.camera instanceof THREE.OrthographicCamera
+            });
+            
+            // Create an array to store audio data for texture
+            this.audioDataArray = new Uint8Array(128);
+            
+            // Handle window resize for shader
+            if (this.resizeHandler) {
+                window.removeEventListener('resize', this.resizeHandler);
+            }
+            
+            this.resizeHandler = () => {
+                if (this.shaderMaterial && this.shaderMaterial.uniforms) {
+                    this.shaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
                 }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform vec2 resolution;
-                uniform float audioLevel;
-                uniform float audioLowFreq;
-                uniform float audioHighFreq;
-                
-                varying vec2 vUv;
-                
-                // Simple noise function
-                float noise(vec2 p) {
-                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-                }
-                
-                vec3 hsv2rgb(vec3 c) {
-                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-                }
-                
-                // Function to generate vibrant colors
-                vec3 vibrantColor(float value, float offset) {
-                    float hue = fract(value * 0.8 + offset);
-                    float sat = 0.9;
-                    float val = 0.9;
-                    return hsv2rgb(vec3(hue, sat, val));
-                }
-                
-                // Function to blend colors
-                vec3 blendColors(vec3 color1, vec3 color2, float factor) {
-                    return mix(color1, color2, factor);
-                }
-                
-                void main() {
-                    // Center coordinates
-                    vec2 uv = vUv * 2.0 - 1.0;
-                    uv.x *= resolution.x / resolution.y;
-                    
-                    // Audio-reactive parameters
-                    float bassPulse = 0.5 + audioLowFreq * 0.7;  // Increased audio reactivity
-                    float treblePulse = 0.5 + audioHighFreq * 0.7;
-                    float overallPulse = 0.5 + audioLevel * 0.7;
-                    
-                    // Create circular waves from center
-                    float dist = length(uv);
-                    float angle = atan(uv.y, uv.x);
-                    
-                    // Wave patterns affected by audio - more complex patterns
-                    float wave1 = sin(dist * 10.0 - time * 2.0) * 0.5 + 0.5;
-                    float wave2 = sin(dist * 15.0 - time * 1.5 + audioLevel * 5.0) * 0.5 + 0.5;
-                    float wave3 = sin(angle * 8.0 + time * 0.5) * 0.5 + 0.5;
-                    float wave4 = sin(dist * 20.0 - time * 2.5 + audioHighFreq * 10.0) * 0.5 + 0.5;
-                    float wave5 = cos(angle * 12.0 - time * 0.7 + audioLowFreq * 2.0) * 0.5 + 0.5;
-                    
-                    // Create multiple patterns for more complex visuals
-                    float pattern1 = wave1 * wave2 * wave3;
-                    float pattern2 = wave4 * wave5;
-                    float pattern3 = sin(dist * 25.0 - time) * cos(angle * 5.0 + time * 0.3);
-                    
-                    // Combine patterns
-                    float mainPattern = smoothstep(0.2, 0.8, pattern1);
-                    mainPattern *= overallPulse;
-                    
-                    float secondPattern = smoothstep(0.1, 0.9, pattern2);
-                    secondPattern *= treblePulse;
-                    
-                    float thirdPattern = smoothstep(0.3, 0.7, pattern3 * 0.5 + 0.5);
-                    thirdPattern *= bassPulse;
-                    
-                    // Create multiple colors with different hue offsets for more variety
-                    float timeOffset = time * 0.05;
-                    
-                    // Primary color - shifts with bass
-                    vec3 color1 = vibrantColor(timeOffset + audioLowFreq * 0.3, 0.0);
-                    
-                    // Secondary color - complementary to primary
-                    vec3 color2 = vibrantColor(timeOffset + audioHighFreq * 0.2, 0.33);
-                    
-                    // Tertiary color - shifts differently
-                    vec3 color3 = vibrantColor(timeOffset - audioLevel * 0.25, 0.66);
-                    
-                    // Background color with subtle patterns
-                    float bgPattern1 = sin(uv.x * 20.0 + time) * sin(uv.y * 20.0 + time * 0.7);
-                    float bgPattern2 = cos(uv.x * 15.0 - time * 0.5) * cos(uv.y * 15.0 - time * 0.3);
-                    
-                    bgPattern1 = smoothstep(0.0, 0.8, bgPattern1 * audioLevel);
-                    bgPattern2 = smoothstep(0.0, 0.8, bgPattern2 * audioHighFreq);
-                    
-                    // Background gradient
-                    vec3 bgColor1 = vibrantColor(timeOffset * 0.7, 0.5);
-                    vec3 bgColor2 = vibrantColor(timeOffset * 0.7, 0.8);
-                    vec3 bgColor = mix(bgColor1, bgColor2, bgPattern1 * 0.5 + 0.5);
-                    
-                    // Apply a vignette effect
-                    float vignette = 1.0 - smoothstep(0.5, 1.5, dist);
-                    
-                    // Mix multiple colors based on patterns
-                    vec3 finalColor = blendColors(color1, color2, pattern1);
-                    finalColor = blendColors(finalColor, color3, pattern2 * 0.7);
-                    
-                    // Add subtle highlights
-                    finalColor += color3 * thirdPattern * 0.3;
-                    
-                    // Mix with background
-                    finalColor = mix(bgColor * 0.4, finalColor, mainPattern * vignette);
-                    
-                    // Add glow effect
-                    finalColor += (color1 * 0.2 + color2 * 0.1) * secondPattern * (1.0 - dist);
-                    
-                    // Final color with background
-                    gl_FragColor = vec4(finalColor, 1.0);
-                }
-            `,
-            side: THREE.DoubleSide
-        });
-        
-        // Create the plane mesh
-        this.shaderPlane = new THREE.Mesh(geometry, this.shaderMaterial);
-        this.scene.add(this.shaderPlane);
-        
-        // Setup orthographic camera for full-screen quad
-        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        
-        // Create an array to store audio data for texture
-        this.audioDataArray = new Uint8Array(128);
-        
-        // Handle window resize for shader
-        window.addEventListener('resize', () => {
-            this.shaderMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
-        });
+            };
+            
+            window.addEventListener('resize', this.resizeHandler);
+        } catch (error) {
+            console.error("Error in createShadersVisualizer:", error);
+            // Fallback to a simpler visualizer if shader creation fails
+            this.currentStyle = 'bars';
+            this.createBars();
+        }
     }
     
     /**
@@ -1340,13 +1289,15 @@ class Visualizer {
      * Updates shader uniforms based on audio data and time
      */
     updateShadersVisualizer(delta) {
-        if (!this.shaderMaterial) return;
+        if (!this.shaderMaterial || !this.shaderMaterial.uniforms) return;
         
         // Update time uniform
         this.shaderTime += delta;
         this.shaderMaterial.uniforms.time.value = this.shaderTime;
         
         // Get audio data
+        if (!this.analyser || !this.audioDataArray) return;
+        
         this.analyser.getByteFrequencyData(this.audioDataArray);
         
         // Calculate different frequency bands
@@ -1438,9 +1389,6 @@ class Visualizer {
                 break;
             case 'points':
                 this.updatePointsVisualizer(delta);
-                break;
-            case 'wave':
-                this.updateWaveVisualizer(delta);
                 break;
             case 'towers':
                 this.updateTowersVisualizer(lowFreqAvg, highFreqAvg, delta);
@@ -1600,89 +1548,89 @@ class Visualizer {
                 }
             }
             
-            // If no slots available, skip
-            if (particleIndex === -1) break;
+            if (particleIndex === -1) break; // No free slots
             
-            // Emission angle based on pattern type
-            let horizontalAngle, vx, vy, vz;
+            // Activate the particle
+            this.particleLifetimes[particleIndex] = this.particleLifespan;
             
-            switch (patternType) {
-                case 0: // Circular pattern (traditional)
-                    horizontalAngle = Math.random() * Math.PI * 2;
-                    vx = Math.cos(horizontalAngle) * baseSpeed;
-                    vy = (Math.random() - 0.5) * baseSpeed * 0.1; // Flatter
-                    vz = Math.sin(horizontalAngle) * baseSpeed;
-                    break;
-                
-                case 1: // Grid pattern (Watanabe 1000CUBES style)
-                    // Emit in a grid pattern
-                    const gridSize = 5;
-                    const gridIndex = i % (gridSize * gridSize);
-                    const gridX = (gridIndex % gridSize) - gridSize/2;
-                    const gridZ = Math.floor(gridIndex / gridSize) - gridSize/2;
-                    
-                    horizontalAngle = Math.atan2(gridZ, gridX);
-                    vx = Math.cos(horizontalAngle) * baseSpeed;
-                    vy = 0; // Keep flat
-                    vz = Math.sin(horizontalAngle) * baseSpeed;
+            // Set initial particle properties
+            let initialVelocity = new THREE.Vector3();
+            let initialPosition = new THREE.Vector3();
+            
+            // Different emission patterns based on audio characteristics
+            switch(patternType) {
+                case 0: // Circular burst (Watanabe-inspired circular patterns)
+                    {
+                        const angle = Math.random() * Math.PI * 2;
+                        const elevation = (Math.random() - 0.5) * Math.PI * 0.5;
+                        
+                        initialPosition.set(0, 0, 0);
+                        
+                        initialVelocity.x = Math.cos(angle) * Math.cos(elevation) * baseSpeed;
+                        initialVelocity.y = Math.sin(elevation) * baseSpeed;
+                        initialVelocity.z = Math.sin(angle) * Math.cos(elevation) * baseSpeed;
+                    }
                     break;
                     
-                case 2: // Linear pattern (code9206 style)
-                    // Emit along straight lines
-                    horizontalAngle = Math.floor(i / 3) * (Math.PI / 8);
-                    vx = Math.cos(horizontalAngle) * baseSpeed;
-                    vy = (Math.random() - 0.5) * baseSpeed * 0.05; // Very flat
-                    vz = Math.sin(horizontalAngle) * baseSpeed;
+                case 1: // Planar burst (Watanabe-inspired flat compositions)
+                    {
+                        const angle = Math.random() * Math.PI * 2;
+                        
+                        initialPosition.set(0, 0, 0);
+                        
+                        initialVelocity.x = Math.cos(angle) * baseSpeed;
+                        initialVelocity.y = 0;
+                        initialVelocity.z = Math.sin(angle) * baseSpeed;
+                        
+                        // Add small vertical variation
+                        initialVelocity.y = (Math.random() - 0.5) * baseSpeed * 0.2;
+                    }
+                    break;
+                    
+                case 2: // Upward fountain (Watanabe-inspired vertical compositions)
+                    {
+                        initialPosition.set(0, 0, 0);
+                        
+                        const angle = Math.random() * Math.PI * 2;
+                        const spread = Math.random() * 0.3; // Focused upward spray
+                        
+                        initialVelocity.x = Math.cos(angle) * baseSpeed * spread;
+                        initialVelocity.y = baseSpeed * (0.7 + Math.random() * 0.3); // Mostly upward
+                        initialVelocity.z = Math.sin(angle) * baseSpeed * spread;
+                    }
                     break;
             }
             
-            // Set starting position (slightly off center for art installation feel)
-            positions.array[particleIndex * 3] = (Math.random() - 0.5) * 1.5;
-            positions.array[particleIndex * 3 + 1] = (Math.random() - 0.5) * 1.5; 
-            positions.array[particleIndex * 3 + 2] = (Math.random() - 0.5) * 1.5;
+            // Set particle position
+            positions.array[particleIndex * 3] = initialPosition.x;
+            positions.array[particleIndex * 3 + 1] = initialPosition.y;
+            positions.array[particleIndex * 3 + 2] = initialPosition.z;
             
-            // Use more refined color palette for art exhibition style
-            let hue, saturation, lightness;
+            // Set particle color
+            // Use a more curated color palette inspired by Watanabe's work
+            let hue = baseHue + (Math.random() - 0.5) * hueVariation;
+            if (hue < 0) hue += 1;
+            if (hue > 1) hue -= 1;
             
-            if (i % 3 === 0) { // Main color (black/white for some particles)
-                hue = 0;
-                saturation = 0;
-                lightness = bassIntensity > 0.7 ? 1.0 : 0;
-            } else {
-                hue = (baseHue + (Math.random() - 0.5) * hueVariation) % 1.0;
-                saturation = 0.6 + trebleIntensity * 0.4;
-                lightness = 0.5 + bassIntensity * 0.3;
-            }
+            // Higher saturation for more vibrant visuals
+            const saturation = 0.7 + Math.random() * 0.3;
+            const lightness = 0.5 + trebleIntensity * 0.2;
             
             const color = new THREE.Color().setHSL(hue, saturation, lightness);
             colors.array[particleIndex * 3] = color.r;
             colors.array[particleIndex * 3 + 1] = color.g;
             colors.array[particleIndex * 3 + 2] = color.b;
             
-            // Particle size - more uniform with subtle variations
-            const sizeVariation = Math.random() * 0.3 + 0.85;
-            sizes.array[particleIndex] = baseSize * sizeVariation;
+            // Set particle size
+            const randomSize = baseSize * (0.8 + Math.random() * 0.4);
+            sizes.array[particleIndex] = randomSize;
             
-            // Set particle as active
-            this.particleLifetimes[particleIndex] = this.particleLifespan;
-            
-            // Store particle velocity including exhibition interaction data
-            if (!this.waveParticles[particleIndex]) {
-                this.waveParticles[particleIndex] = {
-                    velocity: new THREE.Vector3(vx, vy, vz),
-                    initialSize: baseSize * sizeVariation,
-                    pattern: patternType,
-                    frameInteractions: 0
-                };
-            } else {
-                this.waveParticles[particleIndex].velocity.set(vx, vy, vz);
-                this.waveParticles[particleIndex].initialSize = baseSize * sizeVariation;
-                this.waveParticles[particleIndex].pattern = patternType;
-                this.waveParticles[particleIndex].frameInteractions = 0;
-            }
-            
-            // Increment active particle count
-            this.particleCount++;
+            // Store particle data
+            this.waveParticles[particleIndex] = {
+                velocity: initialVelocity,
+                initialSize: randomSize,
+                frameInteractions: 0
+            };
         }
         
         // Mark attributes as needing update
@@ -1896,25 +1844,26 @@ class Visualizer {
     }
     
     /**
-     * Update camera movement for exhibition style
+     * Update camera movement for exhibition view
      */
     updateExhibitionCamera(delta, audioLevel) {
+        // Subtle camera movement based on audio
         const time = this.clock.getElapsedTime();
         
-        // Watanabe-style minimal camera movement
-        const targetHeight = 40 + this.beatDetectionVars.bassBeat * 5;
-        const cameraHeight = this.camera.position.y + (targetHeight - this.camera.position.y) * 0.02;
+        // Base position
+        const basePosY = 40;
+        const basePosZ = 130;
         
-        // Slow, deliberate camera movement for exhibition feel
-        const angle = time * 0.05; // Very slow rotation
-        const radius = 130 - audioLevel * 15; // Move slightly closer during loud parts
+        // Apply subtle movement
+        this.camera.position.y = basePosY + Math.sin(time * 0.2) * 5.0;
+        this.camera.position.z = basePosZ + Math.sin(time * 0.1) * 10.0;
         
-        this.camera.position.x = Math.sin(angle) * radius;
-        this.camera.position.z = Math.cos(angle) * radius;
-        this.camera.position.y = cameraHeight;
-        
-        // Camera looks slightly above center for exhibition view
-        this.camera.lookAt(0, 10 + audioLevel * 5, 0);
+        // Subtle rotation
+        this.camera.lookAt(
+            Math.sin(time * 0.05) * 10.0,
+            10 + Math.sin(time * 0.1) * 5.0,
+            0
+        );
     }
 
     /**
