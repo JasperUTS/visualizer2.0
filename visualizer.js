@@ -396,10 +396,150 @@ class Visualizer {
             case 'shaders':
                 this.createShadersVisualizer();
                 break;
+            case 'nebula':
+                this.createNebulaVisualizer();
+                break;
         }
 
         // Ensure initial render
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * Create the nebula visualizer
+     * Creates a nebula cloud that reacts to music with color and movement
+     */
+    createNebulaVisualizer() {
+        this.particles = [];
+        this.nebulaParticleCount = 2000;
+
+        // Create geometry and material for particles
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(this.nebulaParticleCount * 3);
+        const colors = new Float32Array(this.nebulaParticleCount * 3);
+        const sizes = new Float32Array(this.nebulaParticleCount);
+
+        this.nebulaBaseColor = new THREE.Color(0x663399); // base purple color
+
+        for (let i = 0; i < this.nebulaParticleCount; i++) {
+            // Random positions in a spherical volume
+            const radius = 20 + Math.random() * 10;
+            const theta = Math.random() * 2 * Math.PI;
+            const phi = Math.acos(2 * Math.random() - 1);
+
+            positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+            positions[i * 3 + 2] = radius * Math.cos(phi);
+
+            // Initial colors (purple hues)
+            colors[i * 3] = this.nebulaBaseColor.r;
+            colors[i * 3 + 1] = this.nebulaBaseColor.g;
+            colors[i * 3 + 2] = this.nebulaBaseColor.b;
+
+            // Initial sizes
+            sizes[i] = 5 + Math.random() * 5;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        // Shader material for nebula particles
+        this.nebulaMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                audioLevel: { value: 0 },
+                pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png') }
+            },
+            vertexShader: `
+                attribute float size;
+                varying vec3 vColor;
+                uniform float time;
+                uniform float audioLevel;
+
+                void main() {
+                    vColor = color;
+
+                    // Animate position slightly for movement effect
+                    vec3 pos = position;
+                    float moveFactor = audioLevel * 10.0;
+                    pos.x += sin(time + position.y * 0.5) * 0.5 * moveFactor;
+                    pos.y += cos(time + position.x * 0.5) * 0.5 * moveFactor;
+                    pos.z += sin(time + position.z * 0.5) * 0.5 * moveFactor;
+
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = size * (300.0 / -mvPosition.z) * (1.0 + audioLevel);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D pointTexture;
+                varying vec3 vColor;
+
+                void main() {
+                    vec2 center = vec2(0.5, 0.5);
+                    float dist = length(gl_PointCoord - center);
+
+                    // Soft circular points with alpha fade
+                    float alpha = 1.0 - smoothstep(0.4, 0.5, dist);
+
+                    // Color with alpha
+                    gl_FragColor = vec4(vColor, alpha);
+                }
+            `,
+            transparent: true,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        this.nebulaPoints = new THREE.Points(geometry, this.nebulaMaterial);
+        this.scene.add(this.nebulaPoints);
+
+        // Set camera position for nebula view
+        this.camera.position.set(0, 0, 50);
+        this.camera.lookAt(0, 0, 0);
+    }
+
+    /**
+     * Update the nebula visualizer
+     * Animates the nebula cloud based on audio data
+     */
+    updateNebulaVisualizer(delta) {
+        if (!this.nebulaMaterial) return;
+
+        this.nebulaMaterial.uniforms.time.value += delta;
+
+        // Calculate average audio level
+        let averageLevel = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            averageLevel += this.dataArray[i] / 255.0;
+        }
+        averageLevel /= this.dataArray.length;
+
+        // Smooth the audio level for nicer animation
+        this.smoothedAudioLevel = this.smoothedAudioLevel || 0;
+        const smoothingFactor = 0.1;
+        this.smoothedAudioLevel += (averageLevel - this.smoothedAudioLevel) * smoothingFactor;
+
+        this.nebulaMaterial.uniforms.audioLevel.value = this.smoothedAudioLevel;
+
+        // Update colors based on audio level (shift hue)
+        const baseHue = 0.75; // purple
+        const hueShift = this.smoothedAudioLevel * 0.3;
+        const color = new THREE.Color().setHSL(baseHue + hueShift, 0.7, 0.6);
+
+        const colors = this.nebulaPoints.geometry.attributes.color.array;
+        for (let i = 0; i < this.nebulaParticleCount; i++) {
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+        this.nebulaPoints.geometry.attributes.color.needsUpdate = true;
+
+        // Rotate the nebula slowly
+        this.nebulaPoints.rotation.y += delta * 0.1;
+        this.nebulaPoints.rotation.x += delta * 0.05;
     }
 
     /**
@@ -426,6 +566,15 @@ class Visualizer {
             this.starfield.geometry.dispose();
             this.starfield.material.dispose();
             this.starfield = null;
+        }
+
+        // Remove nebula points
+        if (this.nebulaPoints) {
+            this.scene.remove(this.nebulaPoints);
+            this.nebulaPoints.geometry.dispose();
+            this.nebulaMaterial.dispose();
+            this.nebulaPoints = null;
+            this.nebulaMaterial = null;
         }
 
         // Reset arrays
@@ -515,7 +664,7 @@ class Visualizer {
         }
         
         // Restore original camera if we're switching from shaders visualizer
-        if (this.originalCamera && this.currentStyle === 'shaders') {
+        if (this.originalCamera && this.camera !== this.originalCamera) {
             // Dispose current camera if needed
             if (this.camera.dispose) {
                 this.camera.dispose();
@@ -1447,6 +1596,9 @@ class Visualizer {
                 break;
             case 'shaders':
                 this.updateShadersVisualizer(delta);
+                break;
+            case 'nebula':
+                this.updateNebulaVisualizer(delta);
                 break;
         }
 
