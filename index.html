@@ -137,6 +137,16 @@
         </div>
 
         <div class="control-group">
+          <label for="brightness-slider">Brightness:</label>
+          <input type="range" id="brightness-slider" min="0" max="2" step="0.01" value="1" />
+        </div>
+
+        <div class="control-group" id="pulse-severity-control" style="display:none;">
+          <label for="pulse-severity-slider">Pulse Severity:</label>
+          <input type="range" id="pulse-severity-slider" min="0" max="2" step="0.01" value="1" />
+        </div>
+
+        <div class="control-group">
           <label for="audio-input">Upload Music:</label>
           <div class="file-upload">
             <input type="file" id="audio-input" accept="audio/*" multiple>
