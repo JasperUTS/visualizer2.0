@@ -38,6 +38,11 @@ class Visualizer {
         // Controls and timing
         this.orbitControls = null;
         this.clock = new THREE.Clock();
+
+        // User selectable colors
+        this.primaryColor = new THREE.Color(0x00ff00); // default green
+        this.secondaryColor = new THREE.Color(0x663399); // default purple
+        this.tertiaryColor = new THREE.Color(0xffa500); // default orange
         
         // Ink visualizer properties
         this.inkSystem = null;
@@ -69,6 +74,7 @@ class Visualizer {
         this.midFreqSmoothed = 0;
         this.highFreqSmoothed = 0;
         this.overallSmoothed = 0;
+        this.tertiaryColor = new THREE.Color(0xffa500); // default orange
         
         // Cloud control properties
         this.cloudSettings = {
@@ -142,6 +148,11 @@ class Visualizer {
         const prevBtn = document.getElementById('prev');
         const visualizerStyle = document.getElementById('visualizer-style');
 
+        // New color pickers
+        const primaryColorPicker = document.getElementById('primary-color-picker');
+        const secondaryColorPicker = document.getElementById('secondary-color-picker');
+        const tertiaryColorPicker = document.getElementById('tertiary-color-picker');
+
         // Initialize audio context on first user interaction
         const initAudioContext = () => {
             if (!this.audioContext) {
@@ -212,6 +223,22 @@ class Visualizer {
         visualizerStyle.addEventListener('change', (event) => {
             this.currentStyle = event.target.value;
             this.createVisualizer();
+        });
+
+        // Handle color picker changes
+        primaryColorPicker.addEventListener('input', (event) => {
+            this.primaryColor.set(event.target.value);
+            this.updateColors();
+        });
+
+        secondaryColorPicker.addEventListener('input', (event) => {
+            this.secondaryColor.set(event.target.value);
+            this.updateColors();
+        });
+
+        tertiaryColorPicker.addEventListener('input', (event) => {
+            this.tertiaryColor.set(event.target.value);
+            this.updateColors();
         });
     }
 
@@ -396,10 +423,145 @@ class Visualizer {
             case 'shaders':
                 this.createShadersVisualizer();
                 break;
+            case 'nebula':
+                this.createNebulaVisualizer();
+                break;
         }
 
         // Ensure initial render
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * Create the nebula visualizer
+     * Creates a nebula cloud that reacts to music with color and movement
+     */
+    createNebulaVisualizer() {
+        this.particles = [];
+        this.nebulaParticleCount = 2000;
+
+        // Create geometry and material for particles
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(this.nebulaParticleCount * 3);
+        const colors = new Float32Array(this.nebulaParticleCount * 3);
+        const sizes = new Float32Array(this.nebulaParticleCount);
+
+        this.nebulaBaseColor = this.secondaryColor; // use secondary color
+
+        for (let i = 0; i < this.nebulaParticleCount; i++) {
+            // Random positions in a spherical volume
+            const radius = 20 + Math.random() * 10;
+            const theta = Math.random() * 2 * Math.PI;
+            const phi = Math.acos(2 * Math.random() - 1);
+
+            positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+            positions[i * 3 + 2] = radius * Math.cos(phi);
+
+            // Initial colors (purple hues)
+            colors[i * 3] = this.nebulaBaseColor.r;
+            colors[i * 3 + 1] = this.nebulaBaseColor.g;
+            colors[i * 3 + 2] = this.nebulaBaseColor.b;
+
+            // Initial sizes
+            sizes[i] = 5 + Math.random() * 5;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        // Shader material for nebula particles
+        this.nebulaMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                audioLevel: { value: 0 },
+                pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png') }
+            },
+            vertexShader: `
+                attribute float size;
+                varying vec3 vColor;
+                uniform float time;
+                uniform float audioLevel;
+
+                void main() {
+                    vColor = color;
+
+                    // Animate position slightly for movement effect
+                    vec3 pos = position;
+                    float moveFactor = audioLevel * 10.0;
+                    pos.x += sin(time + position.y * 0.5) * 0.5 * moveFactor;
+                    pos.y += cos(time + position.x * 0.5) * 0.5 * moveFactor;
+                    pos.z += sin(time + position.z * 0.5) * 0.5 * moveFactor;
+
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = size * (300.0 / -mvPosition.z) * (1.0 + audioLevel);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D pointTexture;
+                varying vec3 vColor;
+
+                void main() {
+                    vec4 texColor = texture2D(pointTexture, gl_PointCoord);
+                    if (texColor.a < 0.1) discard;
+                    gl_FragColor = vec4(vColor, texColor.a);
+                }
+            `,
+            transparent: true,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        // Create the Points object and add to scene
+        this.nebulaPoints = new THREE.Points(geometry, this.nebulaMaterial);
+        this.scene.add(this.nebulaPoints);
+
+        // Initialize smoothedAudioLevel to avoid undefined usage
+        this.smoothedAudioLevel = 0;
+    }
+
+    /**
+     * Update the nebula visualizer
+     * Animates the nebula cloud based on audio data
+     */
+    updateNebulaVisualizer(delta) {
+        if (!this.nebulaMaterial) return;
+
+        this.nebulaMaterial.uniforms.time.value += delta;
+
+        // Calculate average audio level
+        let averageLevel = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            averageLevel += this.dataArray[i] / 255.0;
+        }
+        averageLevel /= this.dataArray.length;
+
+        // Smooth the audio level for nicer animation
+        this.smoothedAudioLevel = this.smoothedAudioLevel || 0;
+        const smoothingFactor = 0.1;
+        this.smoothedAudioLevel += (averageLevel - this.smoothedAudioLevel) * smoothingFactor;
+
+        this.nebulaMaterial.uniforms.audioLevel.value = this.smoothedAudioLevel;
+
+        // Update colors based on audio level (shift hue)
+        const baseHue = 0.75; // purple
+        const hueShift = this.smoothedAudioLevel * 0.3;
+        const color = new THREE.Color().setHSL(baseHue + hueShift, 0.7, 0.6);
+
+        const colors = this.nebulaPoints.geometry.attributes.color.array;
+        for (let i = 0; i < this.nebulaParticleCount; i++) {
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+        this.nebulaPoints.geometry.attributes.color.needsUpdate = true;
+
+        // Rotate the nebula slowly
+        this.nebulaPoints.rotation.y += delta * 0.1;
+        this.nebulaPoints.rotation.x += delta * 0.05;
     }
 
     /**
@@ -426,6 +588,15 @@ class Visualizer {
             this.starfield.geometry.dispose();
             this.starfield.material.dispose();
             this.starfield = null;
+        }
+
+        // Remove nebula points
+        if (this.nebulaPoints) {
+            this.scene.remove(this.nebulaPoints);
+            this.nebulaPoints.geometry.dispose();
+            this.nebulaMaterial.dispose();
+            this.nebulaPoints = null;
+            this.nebulaMaterial = null;
         }
 
         // Reset arrays
@@ -515,7 +686,7 @@ class Visualizer {
         }
         
         // Restore original camera if we're switching from shaders visualizer
-        if (this.originalCamera && this.currentStyle === 'shaders') {
+        if (this.originalCamera && this.camera !== this.originalCamera) {
             // Dispose current camera if needed
             if (this.camera.dispose) {
                 this.camera.dispose();
@@ -576,7 +747,7 @@ class Visualizer {
         for (let i = 0; i < barCount; i++) {
             const geometry = new THREE.BoxGeometry(barWidth, barHeight, 1);
             const material = new THREE.MeshPhongMaterial({
-                color: 0x00ff00,
+                color: this.primaryColor,
                 shininess: 100
             });
             const bar = new THREE.Mesh(geometry, material);
@@ -598,8 +769,9 @@ class Visualizer {
         const colors = new Float32Array(pointCount * 3);
         const sizes = new Float32Array(pointCount);
 
-        // Initialize points with random positions and colors
+        // Initialize points with random positions and colors based on primaryColor
         const color = new THREE.Color();
+        const baseHSL = this.primaryColor.getHSL({ h: 0, s: 0, l: 0 });
         for (let i = 0; i < pointCount; i++) {
             const i3 = i * 3;
             
@@ -612,8 +784,10 @@ class Visualizer {
             positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
             positions[i3 + 2] = radius * Math.cos(phi);
             
-            // Random colors
-            color.setHSL(Math.random(), 0.8, 0.5);
+            // Colors with hue variation around primaryColor hue
+            const hueVariation = 0.1;
+            const hue = (baseHSL.h + (Math.random() - 0.5) * hueVariation) % 1.0;
+            color.setHSL(hue, baseHSL.s, baseHSL.l);
             colors[i3] = color.r;
             colors[i3 + 1] = color.g;
             colors[i3 + 2] = color.b;
@@ -744,14 +918,18 @@ class Visualizer {
         // Store lifetime data for animation
         this.particleLifetimes = lifetimes;
         
-        // Create shader material for particles
+        // Create shader material for particles with color uniforms
         this.waveMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
-                pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') }
+                pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') },
+                primaryColor: { value: new THREE.Color(this.primaryColor) },
+                secondaryColor: { value: new THREE.Color(this.secondaryColor) },
+                tertiaryColor: { value: new THREE.Color(this.tertiaryColor) }
             },
             vertexShader: `
                 attribute float size;
+                attribute vec3 color;
                 varying vec3 vColor;
                 
                 void main() {
@@ -763,6 +941,9 @@ class Visualizer {
             `,
             fragmentShader: `
                 uniform sampler2D pointTexture;
+                uniform vec3 primaryColor;
+                uniform vec3 secondaryColor;
+                uniform vec3 tertiaryColor;
                 varying vec3 vColor;
                 
                 void main() {
@@ -773,8 +954,12 @@ class Visualizer {
                     // Square-ish particles with soft edges (Watanabe style)
                     float alpha = smoothstep(0.5, 0.3, dist);
                     
-                    // Apply texture and color
-                    gl_FragColor = vec4(vColor, alpha);
+                    // Mix vColor with primary, secondary, and tertiary colors for effect
+                    vec3 mix1 = mix(primaryColor, secondaryColor, 0.5);
+                    vec3 mixedColor = mix(mix1, tertiaryColor, 0.33);
+                    vec3 finalColor = mix(mixedColor, vColor, 0.7);
+                    
+                    gl_FragColor = vec4(finalColor, alpha);
                 }
             `,
             transparent: true,
@@ -1185,7 +1370,7 @@ class Visualizer {
         // Create a full-screen quad for the shader
         const geometry = new THREE.PlaneGeometry(2, 2);
         
-        // Create shader material with uniforms for audio reactivity
+        // Create shader material with uniforms for audio reactivity and user colors
         this.shaderMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
@@ -1193,7 +1378,10 @@ class Visualizer {
                 audioLevel: { value: 0.0 },
                 audioLowFreq: { value: 0.0 },
                 audioHighFreq: { value: 0.0 },
-                audioTexture: { value: null }
+                audioTexture: { value: null },
+                primaryColor: { value: new THREE.Color(this.primaryColor) },
+                secondaryColor: { value: new THREE.Color(this.secondaryColor) },
+                tertiaryColor: { value: new THREE.Color(this.tertiaryColor) }
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -1209,6 +1397,9 @@ class Visualizer {
                 uniform float audioLevel;
                 uniform float audioLowFreq;
                 uniform float audioHighFreq;
+                uniform vec3 primaryColor;
+                uniform vec3 secondaryColor;
+                uniform vec3 tertiaryColor;
                 
                 varying vec2 vUv;
                 
@@ -1223,17 +1414,10 @@ class Visualizer {
                     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
                 }
                 
-                // Function to generate vibrant colors
-                vec3 vibrantColor(float value, float offset) {
-                    float hue = fract(value * 0.8 + offset);
-                    float sat = 0.9;
-                    float val = 0.9;
-                    return hsv2rgb(vec3(hue, sat, val));
-                }
-                
                 // Function to blend colors
-                vec3 blendColors(vec3 color1, vec3 color2, float factor) {
-                    return mix(color1, color2, factor);
+                vec3 blendColors(vec3 color1, vec3 color2, vec3 color3, float factor1, float factor2) {
+                    vec3 mix1 = mix(color1, color2, factor1);
+                    return mix(mix1, color3, factor2);
                 }
                 
                 void main() {
@@ -1242,7 +1426,7 @@ class Visualizer {
                     uv.x *= resolution.x / resolution.y;
                     
                     // Audio-reactive parameters
-                    float bassPulse = 0.5 + audioLowFreq * 0.7;  // Increased audio reactivity
+                    float bassPulse = 0.5 + audioLowFreq * 0.7;
                     float treblePulse = 0.5 + audioHighFreq * 0.7;
                     float overallPulse = 0.5 + audioLevel * 0.7;
                     
@@ -1272,47 +1456,15 @@ class Visualizer {
                     float thirdPattern = smoothstep(0.3, 0.7, pattern3 * 0.5 + 0.5);
                     thirdPattern *= bassPulse;
                     
-                    // Create multiple colors with different hue offsets for more variety
-                    float timeOffset = time * 0.05;
+                    // Mix user selected colors with audio-reactive patterns
+                    vec3 finalColor = blendColors(primaryColor, secondaryColor, tertiaryColor, 0.5, 0.33);
+                    finalColor += mix(secondaryColor, primaryColor, 0.5) * secondPattern * 0.5;
+                    finalColor += mix(primaryColor, secondaryColor, 0.5) * thirdPattern * 0.3;
                     
-                    // Primary color - shifts with bass
-                    vec3 color1 = vibrantColor(timeOffset + audioLowFreq * 0.3, 0.0);
-                    
-                    // Secondary color - complementary to primary
-                    vec3 color2 = vibrantColor(timeOffset + audioHighFreq * 0.2, 0.33);
-                    
-                    // Tertiary color - shifts differently
-                    vec3 color3 = vibrantColor(timeOffset - audioLevel * 0.25, 0.66);
-                    
-                    // Background color with subtle patterns
-                    float bgPattern1 = sin(uv.x * 20.0 + time) * sin(uv.y * 20.0 + time * 0.7);
-                    float bgPattern2 = cos(uv.x * 15.0 - time * 0.5) * cos(uv.y * 15.0 - time * 0.3);
-                    
-                    bgPattern1 = smoothstep(0.0, 0.8, bgPattern1 * audioLevel);
-                    bgPattern2 = smoothstep(0.0, 0.8, bgPattern2 * audioHighFreq);
-                    
-                    // Background gradient
-                    vec3 bgColor1 = vibrantColor(timeOffset * 0.7, 0.5);
-                    vec3 bgColor2 = vibrantColor(timeOffset * 0.7, 0.8);
-                    vec3 bgColor = mix(bgColor1, bgColor2, bgPattern1 * 0.5 + 0.5);
-                    
-                    // Apply a vignette effect
+                    // Apply vignette
                     float vignette = 1.0 - smoothstep(0.5, 1.5, dist);
+                    finalColor *= vignette;
                     
-                    // Mix multiple colors based on patterns
-                    vec3 finalColor = blendColors(color1, color2, pattern1);
-                    finalColor = blendColors(finalColor, color3, pattern2 * 0.7);
-                    
-                    // Add subtle highlights
-                    finalColor += color3 * thirdPattern * 0.3;
-                    
-                    // Mix with background
-                    finalColor = mix(bgColor * 0.4, finalColor, mainPattern * vignette);
-                    
-                    // Add glow effect
-                    finalColor += (color1 * 0.2 + color2 * 0.1) * secondPattern * (1.0 - dist);
-                    
-                    // Final color with background
                     gl_FragColor = vec4(finalColor, 1.0);
                 }
             `,
@@ -1448,6 +1600,9 @@ class Visualizer {
             case 'shaders':
                 this.updateShadersVisualizer(delta);
                 break;
+            case 'nebula':
+                this.updateNebulaVisualizer(delta);
+                break;
         }
 
         this.renderer.render(this.scene, this.camera);
@@ -1462,7 +1617,9 @@ class Visualizer {
             const value = this.dataArray[i] / 255;
             const bar = this.bars[i];
             bar.scale.y = 1 + value * 10;
-            const hue = (i / this.bars.length) * 0.3 + 0.5;
+            // Use primary color hue with variation
+            const baseHue = this.primaryColor.getHSL({ h: 0, s: 0, l: 0 }).h;
+            const hue = (baseHue + (i / this.bars.length) * 0.3) % 1.0;
             const color = new THREE.Color().setHSL(hue, 1, 0.5);
             bar.material.color = color;
         }
@@ -1986,6 +2143,84 @@ class Visualizer {
             
             trackList.appendChild(trackItem);
         });
+    }
+
+    /**
+     * Update the colors of visualizer elements based on user-selected colors
+     */
+    updateColors() {
+        // Update bars colors
+        this.bars.forEach((bar, i) => {
+            const baseHue = this.primaryColor.getHSL({ h: 0, s: 0, l: 0 }).h;
+            const hue = (baseHue + (i / this.bars.length) * 0.3) % 1.0;
+            // Mix three colors for bar color
+            const color = new THREE.Color();
+            color.lerpColors(this.primaryColor, this.secondaryColor, 0.5);
+            color.lerp(this.tertiaryColor, 0.33);
+            bar.material.color = color;
+        });
+
+        // Update points colors
+        if (this.pointsMesh) {
+            const baseHSL = this.primaryColor.getHSL({ h: 0, s: 0, l: 0 });
+            const colors = this.pointsMesh.geometry.attributes.color.array;
+            for (let i = 0; i < colors.length / 3; i++) {
+                const hueVariation = 0.1;
+                const hue = (baseHSL.h + (Math.random() - 0.5) * hueVariation) % 1.0;
+                const color = new THREE.Color().setHSL(hue, baseHSL.s, baseHSL.l);
+                // Mix three colors for point color
+                color.lerp(this.secondaryColor, 0.5);
+                color.lerp(this.tertiaryColor, 0.33);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+            this.pointsMesh.geometry.attributes.color.needsUpdate = true;
+        }
+
+        // Update nebula base color and colors array
+        if (this.nebulaPoints) {
+            // Mix three colors for nebula base color
+            this.nebulaBaseColor = new THREE.Color();
+            this.nebulaBaseColor.lerpColors(this.secondaryColor, this.primaryColor, 0.5);
+            this.nebulaBaseColor.lerp(this.tertiaryColor, 0.33);
+            const colors = this.nebulaPoints.geometry.attributes.color.array;
+            for (let i = 0; i < this.nebulaParticleCount; i++) {
+                colors[i * 3] = this.nebulaBaseColor.r;
+                colors[i * 3 + 1] = this.nebulaBaseColor.g;
+                colors[i * 3 + 2] = this.nebulaBaseColor.b;
+            }
+            this.nebulaPoints.geometry.attributes.color.needsUpdate = true;
+        }
+
+        // Update towers colors
+        this.towers.forEach((tower) => {
+            // Mix three colors for tower color
+            const color = new THREE.Color();
+            color.lerpColors(this.primaryColor, this.secondaryColor, 0.5);
+            color.lerp(this.tertiaryColor, 0.33);
+            tower.material.color = color;
+        });
+
+        // Update wave material colors
+        if (this.waveMaterial) {
+            this.waveMaterial.uniforms.primaryColor.value = this.primaryColor;
+            this.waveMaterial.uniforms.secondaryColor.value = this.secondaryColor;
+            this.waveMaterial.uniforms.tertiaryColor = { value: this.tertiaryColor };
+            this.waveMaterial.uniforms.primaryColor.needsUpdate = true;
+            this.waveMaterial.uniforms.secondaryColor.needsUpdate = true;
+            this.waveMaterial.uniforms.tertiaryColor.needsUpdate = true;
+        }
+
+        // Update shader material colors
+        if (this.shaderMaterial) {
+            this.shaderMaterial.uniforms.primaryColor.value = this.primaryColor;
+            this.shaderMaterial.uniforms.secondaryColor.value = this.secondaryColor;
+            this.shaderMaterial.uniforms.tertiaryColor = { value: this.tertiaryColor };
+            this.shaderMaterial.uniforms.primaryColor.needsUpdate = true;
+            this.shaderMaterial.uniforms.secondaryColor.needsUpdate = true;
+            this.shaderMaterial.uniforms.tertiaryColor.needsUpdate = true;
+        }
     }
 }
 
